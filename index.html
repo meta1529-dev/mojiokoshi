@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>もじ起こしライブ</title>
+<meta name="description" content="iPhone・ブラウザの中で完結する日本語リアルタイム文字起こし。音声は端末内で処理され、保存されません。">
+<meta name="theme-color" content="#0b7285">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="もじ起こし">
+<style>
+  :root {
+    --teal: #0b7285;
+    --teal-dark: #095c6b;
+    --bg: #f6f8f9;
+    --card: #ffffff;
+    --text: #1c2527;
+    --muted: #66757a;
+    --interim: #98a4a8;
+    --danger: #c92a2a;
+    --border: #dde5e7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 env(safe-area-inset-bottom);
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg); color: var(--text);
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    background: var(--teal); color: #fff;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 12px;
+  }
+  header h1 { margin: 0; font-size: 1.25rem; font-weight: 700; }
+  header p { margin: 4px 0 0; font-size: 0.8rem; opacity: 0.9; }
+  main { max-width: 760px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .card h2 { margin: 0 0 8px; font-size: 0.95rem; }
+  .small { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button {
+    font: inherit; font-size: 0.95rem; border-radius: 10px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); padding: 10px 14px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primary { background: var(--teal); border-color: var(--teal); color: #fff; font-weight: 700; }
+  button.primary.recording { background: var(--danger); border-color: var(--danger); }
+  button.ghost { background: transparent; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 8px 14px; background: #fff; }
+  .seg button.active { background: var(--teal); color: #fff; font-weight: 700; }
+  progress { width: 100%; height: 10px; accent-color: var(--teal); }
+  #engineStatus { font-size: 0.85rem; }
+  .badge { display: inline-block; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: #e3f2f5; color: var(--teal-dark); font-weight: 700; }
+  .badge.warn { background: #fff3bf; color: #7a5b00; }
+  #transcript {
+    min-height: 180px; max-height: 46vh; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-word;
+    font-size: 1.05rem; line-height: 1.7; padding: 4px 2px;
+  }
+  #transcript .placeholder { color: var(--interim); font-size: 0.9rem; }
+  #interimText { color: var(--interim); white-space: pre-wrap; word-break: break-word; font-size: 1.05rem; line-height: 1.7; min-height: 1.2em; }
+  textarea {
+    width: 100%; font: inherit; font-size: 0.95rem; line-height: 1.6;
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: #fbfcfc;
+  }
+  input[type="text"], input[type="password"], input[type="url"] {
+    width: 100%; font: inherit; font-size: 0.9rem; padding: 9px 10px;
+    border: 1px solid var(--border); border-radius: 8px; margin: 4px 0 10px; background: #fff;
+  }
+  label { font-size: 0.85rem; font-weight: 600; }
+  details summary { cursor: pointer; font-weight: 700; font-size: 0.95rem; }
+  .hidden { display: none !important; }
+  .err { color: var(--danger); font-size: 0.85rem; white-space: pre-wrap; }
+  .ok { color: var(--teal-dark); font-size: 0.85rem; }
+  footer { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
+  a { color: var(--teal-dark); }
+</style>
+</head>
+<body>
+<header>
+  <h1>もじ起こしライブ</h1>
+  <p>日本語の音声を、その場で文字に。オフラインエンジンは端末の中で処理します。</p>
+</header>
+<main>
+  <!-- エンジン -->
+  <section class="card" id="engineCard">
+    <h2>認識エンジン <span class="badge" id="engineBadge">未準備</span></h2>
+    <div class="row" role="group" aria-label="エンジン選択">
+      <div class="seg">
+        <button type="button" id="modeOfflineBtn" class="active">オフライン（端末内）</button>
+        <button type="button" id="modeCloudBtn">クラウド（ブラウザ音声認識）</button>
+      </div>
+    </div>
+    <div id="offlinePanel">
+      <div class="row">
+        <label for="engineKind">エンジン</label>
+        <select id="engineKind">
+          <option value="parakeet">高精度：Parakeet 日本語専用（約656MB）</option>
+          <option value="zipformer">軽量：Zipformer（約170MB）</option>
+        </select>
+      </div>
+      <p class="small" id="engineSizeNote">モデルを初回だけダウンロードし、この端末にキャッシュします。2回目以降は機内モードでも動きます。音声は端末の外に出ません。</p>
+      <p class="small">高精度エンジンはダウンロード量・メモリ使用量が大きく、機種によっては動作しないことがあります。その場合は軽量エンジンに切り替えてください（切り替えると再準備が必要です）。</p>
+      <div class="row">
+        <button type="button" id="prepareBtn" class="primary">エンジンを準備する</button>
+        <span id="engineStatus">未ダウンロード</span>
+      </div>
+      <div id="dlProgress" class="hidden">
+        <progress id="dlBar" max="100" value="0"></progress>
+        <div class="small" id="dlText"></div>
+      </div>
+    </div>
+    <div id="cloudPanel" class="hidden">
+      <p class="small"><strong>注意:</strong> クラウドモードでは、ブラウザの音声認識機能を使うため、<strong>音声がAppleのサーバーで処理されます</strong>（Safariの場合。ブラウザにより送信先は異なります）。端末内に留めたい場合はオフラインモードを使ってください。</p>
+      <p class="small" id="cloudSupport"></p>
+    </div>
+    <p class="err hidden" id="engineError"></p>
+  </section>
+
+  <!-- 録音 -->
+  <section class="card">
+    <h2>文字起こし</h2>
+    <div class="row">
+      <button type="button" id="recordBtn" class="primary" disabled>● 録音をはじめる</button>
+      <button type="button" id="reDecodeBtn" disabled>セッション音声を再認識</button>
+      <label for="fileInput" style="font-weight:400">
+        <span role="button" style="display:inline-block;border:1px solid var(--border);border-radius:10px;padding:10px 14px;background:#fff;cursor:pointer">音声ファイルから起こす</span>
+      </label>
+      <input type="file" id="fileInput" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm" class="hidden">
+    </div>
+    <p class="small" id="recordHint">エンジンの準備ができると録音できます。録音中の音声は、この画面を開いている間だけメモリに保持されます（再認識のため）。保存はされず、画面を閉じる／「全て消去」で破棄されます。</p>
+    <div class="small hidden" id="fileProgress"></div>
+    <div id="transcript" aria-live="polite"><span class="placeholder">ここに文字起こし結果が表示されます。確定した文は黒、認識中の文はグレーです。</span></div>
+    <div id="interimText"></div>
+    <div class="row" style="margin-top:10px">
+      <button type="button" id="copyBtn">コピー</button>
+      <button type="button" id="saveBtn">.txtで保存</button>
+      <button type="button" id="formatBtn">簡易整形（フィラー除去・句読点）</button>
+      <button type="button" id="aiBtn">AIで整文</button>
+      <button type="button" id="clearBtn" class="ghost">全て消去</button>
+    </div>
+    <p class="ok hidden" id="actionMsg"></p>
+  </section>
+
+  <!-- 整形・AI結果 -->
+  <section class="card hidden" id="polishCard">
+    <h2 id="polishTitle">整形結果</h2>
+    <textarea id="polishText" rows="8"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button type="button" id="polishApplyBtn" class="primary">この内容で置き換える</button>
+      <button type="button" id="polishCloseBtn">破棄する</button>
+    </div>
+    <p class="small">元の文章は、置き換えるまではそのまま残ります。</p>
+  </section>
+
+  <!-- AI設定 -->
+  <section class="card">
+    <details id="settingsDetails">
+      <summary>AI整文の設定（任意・自分のAPIキー）</summary>
+      <p class="small">「AIで整文」は、確定した文字起こしを文脈から読み直して誤りを直す機能です。使うには、あなた自身のAPIキーが必要です。<strong>キーはこの端末のブラウザ内（localStorage）にだけ保存され</strong>、このアプリに同梱されたキーはありません。送信先は下に設定したAPIエンドポイントのみです。未設定のまま「AIで整文」を押すと、この設定への案内が出るだけです。</p>
+      <label for="llmEndpoint">APIエンドポイント（OpenAI互換）</label>
+      <input type="url" id="llmEndpoint" placeholder="https://api.openai.com/v1/chat/completions" autocomplete="off">
+      <label for="llmModel">モデル名</label>
+      <input type="text" id="llmModel" placeholder="gpt-4o-mini" autocomplete="off">
+      <label for="llmKey">APIキー</label>
+      <input type="password" id="llmKey" placeholder="sk-..." autocomplete="off">
+      <div class="row">
+        <button type="button" id="llmSaveBtn">設定を保存</button>
+        <button type="button" id="llmClearBtn" class="ghost">キーを消去</button>
+      </div>
+      <p class="ok hidden" id="llmMsg"></p>
+    </details>
+  </section>
+</main>
+<footer>
+  <p class="small">
+    使い方のコツ: 静かな場所で、口元から少し離して話すと精度が上がります。授業や会議の録音は、相手・先生の許可を取ってください。<br>
+    音声認識モデル: ReazonSpeech Zipformer（sherpa-onnx / WebAssembly、端末内処理）。詳しくは同梱の THIRD-PARTY.md を参照。<br>
+    テキストはこの端末のブラウザに保存されます（localStorage）。音声ファイルそのものは保存されません。
+  </p>
+</footer>
+
+<script src="vendor/sherpa/sherpa-onnx-vad.js"></script>
+<script src="vendor/sherpa/sherpa-onnx-asr.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
