@@ -4,7 +4,7 @@
  * モデルファイル（約170MB）はアプリ側が Cache Storage (mojiokoshi-models-v1) で管理するため、
  * ここでは同一オリジンのリクエストだけを扱い、外部オリジンには一切介入しない。
  */
-const CACHE = 'mojiokoshi-shell-v5';
+const CACHE = 'mojiokoshi-shell-v6';
 const ASSETS = [
   './',
   './index.html',
