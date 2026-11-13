@@ -118,6 +118,76 @@ async function sha256Hex(buf) {
 }
 
 async function fetchPart(part, onBytes) {
+  // 大きなパートはメモリに貯めず Cache Storage へ直接ストリーム書き込みする（下記）。
+  // sliceFrom つき（切り出しが必要）なパートは従来方式で扱う。
+  if (!part.sliceFrom && part.size > 32 * 1048576) return fetchPartStreaming(part, onBytes);
+  return fetchPartLegacy(part, onBytes);
+}
+
+/* 大容量パート用: ダウンロードしながら Cache Storage へ直接書き込む。
+ * 従来方式はチャンクを JS メモリに全量保持してから連結するため、656MB のモデルでは
+ * ピーク約1.3GB になり、iPhone Safari がタブごと落とす（実機で確認された症状）。
+ * 本方式はダウンロード中の JS ヒープ使用量がほぼゼロになる。
+ * 保存自体ができない（容量上限など）場合は、その場限りの動作にフォールバックせず
+ * 理由を画面に出す。黙って続けると「開くたびに再ダウンロード」になるため。 */
+async function fetchPartStreaming(part, onBytes) {
+  const cache = await caches.open(MODEL_CACHE);
+  const key = new Request(new URL('__model__/' + part.fsName, location.href).toString());
+  const hit = await cache.match(key);
+  if (hit) {
+    const buf = await hit.arrayBuffer();
+    if (buf.byteLength === part.size) { onBytes(part.size); return buf; }
+    // サイズ不一致の壊れたキャッシュは捨てて取り直す
+    await cache.delete(key);
+  }
+  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (_) {}
+  let counted = 0; // このパートで進捗に加算済みのバイト数（再試行時に巻き戻す）
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await cache.delete(key);
+      const resp = await fetch(part.url);
+      if (!resp.ok || !resp.body) throw new Error(`モデル取得に失敗しました (${part.fsName}: HTTP ${resp.status})`);
+      const [forCache, forProgress] = resp.body.tee();
+      let cacheErr = null;
+      const putDone = cache.put(key, new Response(forCache, { headers: { 'Content-Type': 'application/octet-stream' } }))
+        .then(() => {}, (e) => { cacheErr = e; });
+      const reader = forProgress.getReader();
+      let got = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          got += value.byteLength; counted += value.byteLength; onBytes(value.byteLength);
+        }
+      } catch (readErr) {
+        if (!cacheErr) throw readErr; // 保存側のエラーが原因なら下でまとめて扱う
+      }
+      await putDone;
+      if (cacheErr) {
+        const err = new Error('モデルを端末に保存できませんでした（保存容量の上限の可能性があります）。このままでは開くたびに再ダウンロードになります。端末の空き容量を確保するか、軽量エンジン（Zipformer・約170MB）をお試しください。');
+        err.noCache = true;
+        throw err;
+      }
+      if (got !== part.size) throw new Error(`${part.fsName} のサイズが想定と違います (${got} != ${part.size})`);
+      const back = await cache.match(key);
+      if (!back) throw new Error(`${part.fsName} をキャッシュから読み戻せませんでした`);
+      const buf = await back.arrayBuffer();
+      if (buf.byteLength !== part.size) throw new Error(`${part.fsName} のサイズが想定と違います (${buf.byteLength} != ${part.size})`);
+      const hex = await sha256Hex(buf);
+      if (hex !== part.sha256) { await cache.delete(key); throw new Error(`${part.fsName} のハッシュ検証に失敗しました`); }
+      return buf;
+    } catch (e) {
+      lastErr = e;
+      if (counted > 0) { onBytes(-counted); counted = 0; }
+      if (e && e.noCache) break; // 容量不足は再試行しても直らない
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+  }
+  throw lastErr || new Error(`${part.fsName} の取得に失敗しました`);
+}
+
+async function fetchPartLegacy(part, onBytes) {
   const cache = await caches.open(MODEL_CACHE);
   const key = new Request(new URL('__model__/' + part.fsName, location.href).toString());
   const hit = await cache.match(key);
@@ -240,6 +310,8 @@ async function prepareEngine() {
       if (isPk) {
         window.Module.FS_createDataFile('/', 'parakeet-ja.onnx', new Uint8Array(buffers[1]), true, true, false);
         window.Module.FS_createDataFile('/', 'pk-tokens.txt', new Uint8Array(buffers[2]), true, true, false);
+        // WASM 側へコピー済みなので JS 側の参照を外し、認識器の初期化前にメモリを解放させる（iPhone の上限対策）
+        buffers[1] = null; buffers[2] = null;
         return new OfflineRecognizer({
           modelConfig: { debug: 0, tokens: './pk-tokens.txt', nemoCtc: { model: './parakeet-ja.onnx' } },
         }, window.Module);
@@ -257,6 +329,7 @@ async function prepareEngine() {
         },
       }, window.Module);
     });
+    try { URL.revokeObjectURL(dataUrl); } catch (_) {}
     engineState = 'ready';
     els.badge.textContent = '準備完了（オフライン可）';
     els.engineStatus.textContent = '準備完了。この端末の中だけで処理します。';
@@ -712,9 +785,10 @@ els.modeCloudBtn.addEventListener('click', () => setMode('cloud'));
     : 'このブラウザはクラウドモード（Web Speech API）に対応していません。オフラインモードを使ってください。';
   if (!cloudSupported()) els.modeCloudBtn.disabled = true;
   // エンジン種別の選択（既定は高精度 Parakeet）
+  const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const updateSizeNote = () => {
     els.engineSizeNote.textContent = engineKind === 'parakeet'
-      ? 'モデル（約656MB）を初回だけダウンロードし、この端末にキャッシュします。2回目以降は機内モードでも動きます。音声は端末の外に出ません。'
+      ? 'モデル（約656MB）を初回だけダウンロードし、この端末にキャッシュします。2回目以降は機内モードでも動きます。音声は端末の外に出ません。' + (IS_IOS ? ' ※iPhoneではメモリ・保存容量の上限で落ちたり、保存できないことがあります。その場合は軽量エンジン（Zipformer）をお試しください。ホーム画面に追加しておくと保存が消えにくくなります。' : '')
       : 'モデル（約170MB）を初回だけダウンロードし、この端末にキャッシュします。2回目以降は機内モードでも動きます。音声は端末の外に出ません。';
   };
   els.engineKind.value = engineKind;
