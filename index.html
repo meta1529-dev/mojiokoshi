@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>もじ起こしライブ</title>
 <meta name="description" content="iPhone・ブラウザの中で完結する日本語リアルタイム文字起こし。音声は端末内で処理され、保存されません。">
-<meta name="theme-color" content="#0b7285">
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -15,15 +15,14 @@
 <meta name="apple-mobile-web-app-title" content="もじ起こし">
 <style>
   :root {
-    --teal: #0b7285;
-    --teal-dark: #095c6b;
-    --bg: #f6f8f9;
+    --bg: #ffffff;
     --card: #ffffff;
-    --text: #1c2527;
-    --muted: #66757a;
-    --interim: #98a4a8;
-    --danger: #c92a2a;
-    --border: #dde5e7;
+    --text: #000000;
+    --muted: #595959;
+    --interim: #8c8c8c;
+    --danger: #000000;
+    --border: #000000;
+    --soft-border: #d9d9d9;
   }
   * { box-sizing: border-box; }
   body {
@@ -33,31 +32,31 @@
     -webkit-text-size-adjust: 100%;
   }
   header {
-    background: var(--teal); color: #fff;
+    background: #000; color: #fff;
     padding: calc(10px + env(safe-area-inset-top)) 16px 12px;
   }
-  header h1 { margin: 0; font-size: 1.25rem; font-weight: 700; }
-  header p { margin: 4px 0 0; font-size: 0.8rem; opacity: 0.9; }
+  header h1 { margin: 0; font-size: 1.25rem; font-weight: 700; letter-spacing: 0.03em; }
+  header p { margin: 4px 0 0; font-size: 0.8rem; opacity: 0.85; }
   main { max-width: 760px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .card { background: var(--card); border: 1.5px solid #000; border-radius: 4px; padding: 12px 14px; }
   .card h2 { margin: 0 0 8px; font-size: 0.95rem; }
   .small { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   button {
-    font: inherit; font-size: 0.95rem; border-radius: 10px; border: 1px solid var(--border);
-    background: #fff; color: var(--text); padding: 10px 14px; cursor: pointer;
+    font: inherit; font-size: 0.95rem; border-radius: 4px; border: 1.5px solid #000;
+    background: #fff; color: #000; padding: 10px 14px; cursor: pointer;
   }
-  button:disabled { opacity: 0.45; cursor: not-allowed; }
-  button.primary { background: var(--teal); border-color: var(--teal); color: #fff; font-weight: 700; }
-  button.primary.recording { background: var(--danger); border-color: var(--danger); }
-  button.ghost { background: transparent; }
-  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; padding: 8px 14px; background: #fff; }
-  .seg button.active { background: var(--teal); color: #fff; font-weight: 700; }
-  progress { width: 100%; height: 10px; accent-color: var(--teal); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button.primary { background: #000; border-color: #000; color: #fff; font-weight: 700; }
+  button.primary.recording { background: #fff; border-color: #000; color: #000; }
+  button.ghost { background: transparent; border-color: var(--soft-border); }
+  .seg { display: inline-flex; border: 1.5px solid #000; border-radius: 4px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 8px 14px; background: #fff; color: #000; }
+  .seg button.active { background: #000; color: #fff; font-weight: 700; }
+  progress { width: 100%; height: 10px; accent-color: #000; }
   #engineStatus { font-size: 0.85rem; }
-  .badge { display: inline-block; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: #e3f2f5; color: var(--teal-dark); font-weight: 700; }
-  .badge.warn { background: #fff3bf; color: #7a5b00; }
+  .badge { display: inline-block; font-size: 0.72rem; padding: 2px 8px; border-radius: 2px; background: #000; color: #fff; font-weight: 700; vertical-align: 2px; }
+  .badge.warn { background: #fff; color: #000; border: 1.5px solid #000; }
   #transcript {
     min-height: 180px; max-height: 46vh; overflow-y: auto;
     white-space: pre-wrap; word-break: break-word;
@@ -67,19 +66,23 @@
   #interimText { color: var(--interim); white-space: pre-wrap; word-break: break-word; font-size: 1.05rem; line-height: 1.7; min-height: 1.2em; }
   textarea {
     width: 100%; font: inherit; font-size: 0.95rem; line-height: 1.6;
-    border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: #fbfcfc;
+    border: 1.5px solid #000; border-radius: 4px; padding: 10px; background: #fff;
   }
   input[type="text"], input[type="password"], input[type="url"] {
     width: 100%; font: inherit; font-size: 0.9rem; padding: 9px 10px;
-    border: 1px solid var(--border); border-radius: 8px; margin: 4px 0 10px; background: #fff;
+    border: 1.5px solid #000; border-radius: 4px; margin: 4px 0 10px; background: #fff;
+  }
+  select {
+    font: inherit; font-size: 0.9rem; padding: 8px; max-width: 100%;
+    border: 1.5px solid #000; border-radius: 4px; background: #fff; color: #000;
   }
   label { font-size: 0.85rem; font-weight: 600; }
   details summary { cursor: pointer; font-weight: 700; font-size: 0.95rem; }
   .hidden { display: none !important; }
-  .err { color: var(--danger); font-size: 0.85rem; white-space: pre-wrap; }
-  .ok { color: var(--teal-dark); font-size: 0.85rem; }
+  .err { color: #000; background: #f0f0f0; border-left: 4px solid #000; padding: 8px 10px; font-size: 0.85rem; white-space: pre-wrap; }
+  .ok { color: #000; font-size: 0.85rem; font-weight: 600; }
   footer { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
-  a { color: var(--teal-dark); }
+  a { color: #000; }
 </style>
 </head>
 <body>
@@ -130,7 +133,7 @@
       <button type="button" id="recordBtn" class="primary" disabled>● 録音をはじめる</button>
       <button type="button" id="reDecodeBtn" disabled>セッション音声を再認識</button>
       <label for="fileInput" style="font-weight:400">
-        <span role="button" style="display:inline-block;border:1px solid var(--border);border-radius:10px;padding:10px 14px;background:#fff;cursor:pointer">音声ファイルから起こす</span>
+        <span role="button" style="display:inline-block;border:1.5px solid #000;border-radius:4px;padding:10px 14px;background:#fff;cursor:pointer">音声ファイルから起こす</span>
       </label>
       <input type="file" id="fileInput" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm" class="hidden">
     </div>
